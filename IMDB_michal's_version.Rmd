@@ -1,0 +1,378 @@
+---
+title: "IMDB- Data Analysis"
+author: "Kirill Bulgakov, Michal Cohen and Shachar Schneider"
+date: "June 2021"
+output: 
+  html_document: default
+  pdf_document: default
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+![](movie_theater.jpg)
+
+```{r libraries, message=FALSE, warning=FALSE, echo=FALSE}
+library(tidyverse)
+library(ggcorrplot)
+library(gridExtra)
+library(lmtest)
+library(RColorBrewer)
+
+```
+
+# Introduction
+
+In our project we will examine
+[this](https://www.kaggle.com/harshitshankhdhar/imdb-dataset-of-top-1000-movies-and-tv-shows/download)
+data set describing 1000 movies. This data set comes from the IMDB
+website and it contains a great deal of intriguing information about the
+movies such as: popularity of genre, gross, IMDB rating, MetaScore etc.
+
+# Goals
+
+In our paper we will research the following:
+
+1.  Popular genres and the variables that sets them apart from others.
+
+2.  How is the Meta Score correlated to the IMDB rating.
+
+3.  How is the Number of votes correlated to the Gross.
+
+# Tidying
+Let's get to know our data set by looking at it briefly.
+
+```{r, message=FALSE, warning=FALSE}
+raw_data<-read.csv(file='C:/Users/user/Desktop/imdb_top_1000.csv')
+glimpse(raw_data)
+
+```
+
+So we need to make some changes.
+First, we want to tidy the database by dropping NA's and irrelevant
+categories such as "Poster_Link" , "Certificate" and "Overview".
+
+```{r dataset, message=FALSE, warning=FALSE}
+
+clean_data = subset(raw_data, select = -c(Poster_Link, Certificate, Overview))%>% na.omit(clean_data$Gross,clean_data$No_of_Votes,clean_data$Meta_score,clean_data$IMDB_Rating,clean_data$Runtime)
+view(clean_data)
+```
+
+Secondly, we want to make some more adjustments for us to be able to
+work properly: we need to remove the word "min" from the Runtime
+category, remove commas from the Gross and change the numeric
+information from character to integer. In addition, we want to convert
+the Meta Score number from dozens to units, in order to compare it with
+the IMDB ratings.
+
+```{r tidying of the dataset, message=FALSE, warning=FALSE}
+
+clean_data$Runtime <-gsub(" min","",as.character(clean_data$Runtime))
+
+clean_data$Gross <-gsub(",","",as.character(clean_data$Gross))
+
+clean_data <- transform(clean_data, Runtime = as.integer(Runtime),
+                        Released_Year = as.integer(Released_Year), Gross = as.integer(Gross),No_of_Votes = as.integer(No_of_Votes), IMDB_Rating=as.double(IMDB_Rating), Meta_score=as.double(Meta_score))
+
+clean_data <- mutate(clean_data,Meta_score = Meta_score/10,Gross_in_millions = Gross/1000000,votes_in_thousands= No_of_Votes/1000)
+
+```
+
+Lastly, we will select a few variables and organize them separately. We will use that later.
+
+```{r, message=FALSE, warning=FALSE}
+#cor_tidy <- clean_data %>% select(Gross_in_millions, votes_in_thousands, Meta_score, IMDB_Rating, Runtime)
+#tidy_corr <- cor(cor_tidy)
+
+```
+
+Now let's look at the clean data.
+
+```{r}
+glimpse(clean_data) 
+```
+
+Much better.
+We can see there are a total of 12 genres in the data. But some of the movies contain more than one genre:
+
+```{r}
+clean_data %>%
+  group_by(Genre) %>%
+  summarise()
+
+```
+
+In order to get a better view of the recurrence, we will extract and
+organize each of the genres separately, present in a table, and conclude which are the most popular genres.
+
+```{r}
+
+Table_Comedy<-grepl("Comedy",clean_data$Genre)
+Num_Comedy<-sum(Table_Comedy)
+
+Table_Adventure<-grepl("Adventure",clean_data$Genre)
+Num_Adventure<-sum(Table_Adventure)
+
+Table_Drama<-grepl("Drama",clean_data$Genre)
+Num_Drama<-sum(Table_Drama)
+
+Table_Romance<-grepl("Romance",clean_data$Genre)
+Num_Romance<-sum(Table_Romance)
+
+Table_Crime<-grepl("Crime",clean_data$Genre)
+Num_Crime<-sum(Table_Crime)
+
+Table_Thriller<-grepl("Thriller",clean_data$Genre)
+Num_Thriller<-sum(Table_Thriller)
+
+Table_Horror<-grepl("Horror",clean_data$Genre)
+Num_Horror<-sum(Table_Horror)
+
+Table_Action<-grepl("Action",clean_data$Genre)
+Num_Action<-sum(Table_Action)
+
+Table_Mystery<-grepl("Mystery",clean_data$Genre)
+Num_Mystery<-sum(Table_Mystery)
+
+Table_Scifi<-grepl("Sci-Fi",clean_data$Genre)
+Num_Scifi<-sum(Table_Scifi)
+
+Table_Animation<-grepl("Animation",clean_data$Genre)
+Num_Animation<-sum(Table_Animation)
+
+Table_Family<-grepl("Family",clean_data$Genre)
+Num_Family<-sum(Table_Family)
+
+tab <- matrix(c(Num_Action,Num_Adventure, Num_Animation, Num_Comedy, Num_Crime, Num_Drama, Num_Family, Num_Horror
+                , Num_Mystery, Num_Romance, Num_Scifi, Num_Thriller), ncol=1, byrow=TRUE)
+colnames(tab) <- c('Frequency')
+rownames(tab) <- c('action','adventure','animation', 'comedy', 'crime', 'drama', 'family', 'horror', 'mystery',
+                   'romance', 'scifi', 'thriller')
+tab <- as.table(tab)
+
+genres_table<-as.data.frame(tab)
+genres_table = subset(genres_table, select = -c(Var2))
+genres_table %>% rename(Genres=Var1)
+
+```
+
+# Visualization
+
+Now we can take a look at the popularity of the genres.
+
+```{r}
+palette_Dark2 <- colorRampPalette(brewer.pal(8, "Dark2"))
+ggplot(data=genres_table, aes(x=Var1, y=Freq, fill=Var1)) +
+  geom_bar(stat="identity") +
+  theme(axis.text.x=element_text(angle=45, hjust=1))+
+  labs(x="Genre name", y="Frequency",
+       title="Genres frequency summary")+scale_fill_manual(values = palette_Dark2(15))
+
+
+```
+
+As we can see, Drama movies are much more popular than the other genres.
+But what can we learn about the top 5 most popular genres?
+
+```{r ,message=FALSE, warning=FALSE}
+
+true_genres <- clean_data %>%
+  mutate(is_drama = str_detect(clean_data$Genre, "Drama", negate = FALSE),
+         is_action = str_detect(clean_data$Genre, "Action", negate = FALSE), 
+         is_comedy = str_detect(clean_data$Genre, "Comedy", negate = FALSE),
+         is_adventure = str_detect(clean_data$Genre, "Adventure", negate = FALSE),
+         is_crime = str_detect(clean_data$Genre, "Crime", negate = FALSE))
+only_comedy <- true_genres%>%filter(is_comedy==TRUE)
+only_drama <- true_genres%>%filter(is_drama==TRUE)
+only_crime <- true_genres%>%filter(is_crime==TRUE)
+only_adventure <- true_genres%>%filter(is_adventure==TRUE)
+only_action <- true_genres%>%filter(is_action==TRUE)
+
+Comedy_dist <- ggplot(only_comedy, aes(x=Gross_in_millions)) +ggtitle('Comedy')+
+  geom_histogram(bins=20, fill="cornflowerblue")
+
+Drama_dist <- ggplot(only_drama, aes(x=Gross_in_millions)) +ggtitle('Drama')+
+  geom_histogram(bins=20, fill="cornflowerblue")
+
+Crime_dist <- ggplot(only_crime, aes(x=Gross_in_millions)) +ggtitle('Crime')+
+  geom_histogram(bins=20, fill="cornflowerblue")
+
+Adventure_dist <- ggplot(only_adventure, aes(x=Gross_in_millions)) +ggtitle('Adventure')+
+  geom_histogram(bins=20, fill="cornflowerblue")
+
+Action_dist <- ggplot(only_action, aes(x=Gross_in_millions)) +ggtitle('Action')+
+  geom_histogram(bins=20, fill="cornflowerblue")
+
+grid.arrange(grobs= list(Comedy_dist,Drama_dist,Crime_dist,Adventure_dist,Action_dist),top = "Gross distributions of the most popular genres",
+    fontface = 3, fontsize = 3,hjust = 1,x = 1)
+
+```
+
+
+
+```{r ,message=FALSE, warning=FALSE}
+ggcorrplot(tidy_corr, type = "upper", hc.order = TRUE, outline.col = "white",ggtheme = ggplot2::theme_gray,
+           colors = c("lightskyblue","white","dodgerblue"))
+```
+
+```{r,message=FALSE, warning=FALSE}
+p1 <-ggplot(clean_data, aes(x= votes_in_thousands)) +
+  geom_histogram(bins=30, fill="Navy")
+p2 <-ggplot(clean_data, aes(x= Gross_in_millions)) +
+  geom_histogram(bins=30, fill="lightseagreen")
+p3 <-ggplot(clean_data, aes(x=IMDB_Rating )) +
+  geom_histogram(bins=30, fill="turquoise")
+p4 <-ggplot(clean_data, aes(x=Meta_score )) +
+  geom_histogram(bins=30, fill="slategray1")
+
+grid.arrange(grobs= list(p1,p2,p3,p4),
+    fontface = 3, fontsize = 3,hjust = 1,x = 1)
+
+```
+
+# Modelling
+
+## Paired t-test for Gross income
+
+**H0:** Action is a more profitable genre then non-action movies.
+
+**H1:** The average gross income of action & not action movies has the
+same.
+
+```{r}
+action_v <- clean_genres%>%filter(is_action=="TRUE")
+not_action_v <- clean_genres%>%filter(is_action=="FALSE")%>%sample_n(143)
+
+boxplot(not_action_v$Gross_in_millions, action_v$Gross_in_millions,
+        names = c("Not action genre", "action genre"))
+
+t.test(x = action_v$Gross_in_millions,
+       y = not_action_v$Gross_in_millions,
+       paired = TRUE, alternative = "greater")
+```
+
+**Conclusion**
+
+As we can see from the results, although we thought that we found that
+in a confidence level of 95%, we accept the null hypothesis, Action
+Genre movies are more profitable than non-action genre movies.
+
+```{r}
+Action_income_density <- ggplot(action_v) +
+  geom_density(aes(Gross_in_millions, fill ="Acion", alpha = 0.1)) + 
+  scale_x_continuous(name = "Action income in million dollars") +
+  scale_y_continuous(name = "Density") +
+  ggtitle("Density plot of Action Gross") +
+  scale_fill_brewer(palette="PRGn")
+
+Not_Action_income_density <- ggplot(not_action_v) +
+  geom_density(aes(Gross_in_millions, fill ="Not Acion", alpha = 0.1)) + 
+  scale_x_continuous(name = "Not Action movies income in million dollars") +
+  scale_y_continuous(name = "Density") +
+  ggtitle("Density plot of not Action Gross") +
+  scale_fill_brewer(palette="Set2")
+
+grid.arrange(grobs= list(Action_income_density,Not_Action_income_density),
+    fontface = 3, fontsize = 3,hjust = 1,x = 1)
+
+Action_Gross_mu <- mean(action_v$Gross_in_millions)
+Not_Action_Gross_mu <- mean(not_action_v$Gross_in_millions)
+Action_Gross_mu
+Not_Action_Gross_mu
+
+```
+
+When calculation the average gross income for action and non-action
+genres movies, we see that there is indeed a significant difference
+between them.
+
+## Multiple regression model
+
+We will start with correlation check in order to see which variables are
+associated to each other.
+
+```{r, message=FALSE, warning=FALSE}
+num_data = subset(clean_data, select = -c(Series_Title, Star1, Star2, Star3, Star4, Director, Gross, Genre, No_of_Votes ) ) 
+view(num_data)
+num_data =  cor(num_data)
+ggcorrplot(num_data, type = "upper", hc.order = TRUE, outline.col = "white",ggtheme = ggplot2::theme_gray,
+           colors = c("lightskyblue","white","lightseagreen"))
+```
+
+We can see a strong correlation between the number of votes & Gross
+(which makes sense because the more people watched the movie, the more
+people ranked it). We have a strong correlation between IMDB rating & no
+of votes as well. Let us have a look at it:
+
+```{r, message=FALSE, warning=FALSE}
+votes_gross <- ggplot(clean_data, aes(x=No_of_Votes, y=Gross_in_millions)) +
+  stat_smooth(col="רoyalblue12")
+votes_IMDB <- ggplot(clean_data, aes(x=No_of_Votes, y=IMDB_Rating)) +
+  stat_smooth(col="רoyalblue1")
+
+grid.arrange(grobs= list(votes_gross,votes_IMDB), fontface = 3, fontsize = 3, hjust = 1, x = 1)
+```
+
+We saw that we have a correlation between the number of votes and IMDB
+rating, and a correlation between the number of votes and Gross but with
+more variance in the higher values. Now we will check the linear model
+on the number of votes & Gross + IMDB rating:
+
+```{r, message=FALSE, warning=FALSE}
+linear_model <- lm(votes_in_thousands ~ Gross_in_millions+IMDB_Rating, data=clean_data) 
+summary(linear_model)
+```
+
+We can see we have around 60% of Adjusted R-squared. The adjusted
+R-squared compares the explanatory power of regression models that
+contain different numbers of predictors.\
+The low p-value (p-value\<statistical significance level 0.05) indicates
+that the model is not statistically significant.
+
+Lets have a look at the multiple linear regression visualization:
+
+```{r, message=FALSE, warning=FALSE}
+linear_model %>%  ggplot(aes(y=.resid, x=.fitted))+
+  geom_point(color="turquoise4")+
+  stat_smooth(method = "lm",color="black")
+```
+
+The graph does not look so good. Why is that?
+
+Let's try to understand. First, we need to have a look at whether our
+residuals normally distributed:
+
+```{r, message=FALSE, warning=FALSE}
+
+residuals_qq<- linear_model %>% ggplot(aes(sample=.resid)) +
+  geom_qq() + geom_qq_line(col="blue") +
+  labs(title="Residuals QQ Plot")
+residuals_qq
+
+```
+
+We can see from the QQ plot that our residuals do not distribute
+normally.
+
+Now let's make Breusch-Pagan Test for Homoscedasticity of the data:
+
+```{r, message=FALSE, warning=FALSE }
+bptest(linear_model)
+```
+
+Result of p \< 0.05 suggesting that our data is not homoscedastic.
+
+**Conclusions**
+
+In order to use our model for predicting model, a number of conditions
+must exist: *Homoscedasity* of the data & *normally distributed*
+residuals. Our data does not answer this conditions, so our model can
+not be used as a predicting model.
+
+# summary
+
+Thanks for reading, hope you enjoyed!
