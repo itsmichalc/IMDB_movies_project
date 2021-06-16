@@ -15,7 +15,6 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ![](movie_theater.jpg)
-
 ```{r libraries, message=FALSE, warning=FALSE, echo=FALSE}
 library(tidyverse)
 library(ggcorrplot)
@@ -152,6 +151,8 @@ tab <- as.table(tab)
 
 genres_table<-as.data.frame(tab)
 genres_table = subset(genres_table, select = -c(Var2))
+genres_table <- mutate(genres_table, genre_name=Var1)
+genres_table = subset(genres_table, select = -c(Var1))
 
 ```
 
@@ -161,7 +162,7 @@ Now we can take a look at the popularity of the genres.
 
 ```{r}
 palette_Dark2 <- colorRampPalette(brewer.pal(8, "Dark2"))
-ggplot(data=genres_table, aes(x=Var1, y=Freq, fill=Var1)) +
+ggplot(data=genres_table, aes(x=genre_name, y=Freq, fill=genre_name)) +
   geom_bar(stat="identity") +
   theme(axis.text.x=element_text(angle=45, hjust=1))+
   labs(x="Genre name", y="Frequency",
@@ -171,46 +172,8 @@ ggplot(data=genres_table, aes(x=Var1, y=Freq, fill=Var1)) +
 ```
 
 As we can see, Drama movies are much more popular than the other genres.
-But what can we learn about the top 5 most popular genres?
 
-```{r ,message=FALSE, warning=FALSE}
-
-true_genres <- clean_data %>%
-  mutate(is_drama = str_detect(clean_data$Genre, "Drama", negate = FALSE),
-         is_action = str_detect(clean_data$Genre, "Action", negate = FALSE), 
-         is_comedy = str_detect(clean_data$Genre, "Comedy", negate = FALSE),
-         is_adventure = str_detect(clean_data$Genre, "Adventure", negate = FALSE),
-         is_crime = str_detect(clean_data$Genre, "Crime", negate = FALSE))
-only_comedy <- true_genres%>%filter(is_comedy==TRUE)
-only_drama <- true_genres%>%filter(is_drama==TRUE)
-only_crime <- true_genres%>%filter(is_crime==TRUE)
-only_adventure <- true_genres%>%filter(is_adventure==TRUE)
-only_action <- true_genres%>%filter(is_action==TRUE)
-
-Comedy_dist <- ggplot(only_comedy, aes(x=Gross_in_millions)) +ggtitle('Comedy')+
-  geom_histogram(bins=20, fill="cornflowerblue")
-
-Drama_dist <- ggplot(only_drama, aes(x=Gross_in_millions)) +ggtitle('Drama')+
-  geom_histogram(bins=20, fill="cornflowerblue")
-
-Crime_dist <- ggplot(only_crime, aes(x=Gross_in_millions)) +ggtitle('Crime')+
-  geom_histogram(bins=20, fill="cornflowerblue")
-
-Adventure_dist <- ggplot(only_adventure, aes(x=Gross_in_millions)) +ggtitle('Adventure')+
-  geom_histogram(bins=20, fill="cornflowerblue")
-
-Action_dist <- ggplot(only_action, aes(x=Gross_in_millions)) +ggtitle('Action')+
-  geom_histogram(bins=20, fill="cornflowerblue")
-
-grid.arrange(grobs= list(Comedy_dist,Drama_dist,Crime_dist,Adventure_dist,Action_dist),top = "Gross distributions of the most popular genres",
-    fontface = 3, fontsize = 3,hjust = 1,x = 1)
-
-```
-
-We can see that the extreme values of the most profitable movies are the highest in Adventure genres and Action Genres.  
-
-
-Lets see how some of the values distribute: 
+After we examined the different movie genres, let's take a look at the distribution of our different variables:
 
 ```{r,message=FALSE, warning=FALSE}
 p1 <-ggplot(clean_data, aes(x= votes_in_thousands)) +
@@ -221,11 +184,20 @@ p3 <-ggplot(clean_data, aes(x=IMDB_Rating )) +
   geom_histogram(bins=30, fill="turquoise")
 p4 <-ggplot(clean_data, aes(x=Meta_score )) +
   geom_histogram(bins=30, fill="slategray1")
+p5 <-ggplot(clean_data, aes(x=Runtime )) +
+  geom_histogram(bins=30, fill="blue")
 
-grid.arrange(grobs= list(p1,p2,p3,p4),
+grid.arrange(grobs= list(p1,p2,p3,p4,p5),
     fontface = 3, fontsize = 3,hjust = 1,x = 1)
 
 ```
+
+By looking at the the visualizations so far we can give two graphical assumptions:
+1. Drama is the most frequent genre.
+2. The Number of Votes, Gross, and IMDB rating distribution looks similar. 
+
+Now it's time to test our assumptions.
+
 
 # Modelling
 
@@ -267,7 +239,7 @@ boxplot(drama_v$Gross_in_millions, not_drama_v$Gross_in_millions,
 
 t.test(x = drama_v$Gross_in_millions,
        y = not_drama_v$Gross_in_millions,
-       paired = TRUE, alternative = "less")
+       paired = FALSE, alternative = "less")
 
 ```
 
@@ -293,7 +265,8 @@ ggcorrplot(cor_graph, type = "upper", hc.order = TRUE, outline.col = "white",ggt
 We can see a strong correlation between the number of votes & Gross
 (which makes sense because the more people watched the movie, the more
 people ranked it). We have a strong correlation between IMDB rating & no
-of votes as well. Let us have a look at it:
+of votes as well. In addition as we saw in the visualizations, the distribution of those variables reminds each other.
+Let us have a look at it:
 
 ```{r, message=FALSE, warning=FALSE}
 votes_gross <- ggplot(num_data, aes(x=votes_in_thousands, y=Gross_in_millions)) +
@@ -316,9 +289,7 @@ summary(linear_model)
 
 We can see we have around 60% of Adjusted R-squared. The adjusted
 R-squared compares the explanatory power of regression models that
-contain different numbers of predictors.
-The low p-value (p-value < statistical significance level 0.05) indicates
-that the model is not statistically significant.
+contain different numbers of predictors. To make it simple, the R-squared suggests that there is a prediction of 60% to number of votes of a movie by it's IMDB rating & Gross. 
 
 Lets have a look at the multiple linear regression visualization:
 
@@ -328,7 +299,7 @@ linear_model %>%  ggplot(aes(y=.resid, x=.fitted))+
   stat_smooth(method = "lm",color="black")
 ```
 
-The graph does not look so good. Why is that?
+The graph does not look homoscedastic. Why is that?
 
 Let's try to understand. First, we need to have a look at whether our
 residuals normally distributed:
@@ -345,7 +316,7 @@ residuals_qq
 We can see from the QQ plot that our residuals do not distribute
 normally.
 
-Now let's make Breusch-Pagan Test for Homoscedasticity of the data:
+Now let's make Breusch-Pagan Test for homoscedasticity of the data:
 
 ```{r, message=FALSE, warning=FALSE }
 bptest(linear_model)
@@ -356,11 +327,11 @@ Result of p < 0.05 suggesting that our data is not homoscedastic.
 *Conclusions*
 
 In order to use our model for predicting model, a number of conditions
-must exist: *Homoscedasity* of the data & *normally distributed*
+must exist: **homoscedasticity** of the data & **normally distributed**
 residuals. Our data does not answer this conditions, so our model can
 not be used as a predicting model.
 
-
+# Sumarry
 
 
 ![](the_end.jpg){width=50%}
