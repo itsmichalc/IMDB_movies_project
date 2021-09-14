@@ -15,6 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ![](movie_theater.jpg)
+
 ```{r libraries, message=FALSE, warning=FALSE, echo=FALSE}
 library(tidyverse)
 library(ggcorrplot)
@@ -28,34 +29,37 @@ library(dplyr)
 # Introduction
 
 In our project we will examine
-[this](https://www.kaggle.com/harshitshankhdhar/imdb-dataset-of-top-1000-movies-and-tv-shows/download)
+[this](https://raw.githubusercontent.com/itsmichalc/IMDB_movies_project/main/imdb_top_1000.csv)
 data set describing 1000 movies. This data set comes from the IMDB
 website and it contains a great deal of intriguing information about
 movies such as: popularity of genre, gross, IMDB rating, MetaScore etc.
 
 # Goals
 
-In our paper we will:
+In today's world, we know that a successful movie not only entertains
+the audience but also enables film companies to make a profit. Many
+factors can affect the gross such as directors, the year of making,
+ratings, and the genre.
 
-1. Tidy the data in so that we can work with it.
-
-2. Make some visualizations on the data and show you some interesting facts about it.
-
-3. Do some statistical models and make conclusions about the data.
-
+Our research will examine how different parameters affect the gross of a
+movie, specifically popular genres. In addition, we will learn how the
+Meta Score rating is compared to the IMDB rating. Finally, we will
+explore the correlation between the number of votes to the IMDB rating
+and the revenue.
 
 # Tidying
+
 Let's get to know our data set by looking at it briefly.
 
 ```{r, message=FALSE, warning=FALSE}
-raw_data<-read.csv(file='C:/Users/bulga/Downloads/imdb_top_1000.csv')
+raw_data<-read.csv(file='C:/Users/user/Desktop/imdb_top_1000.csv')
 glimpse(raw_data)
 
 ```
 
-So we need to make some changes.
-First, we want to tidy the database by dropping NA's and irrelevant
-categories such as "Poster_Link" , "Certificate" and "Overview".
+So we need to make some changes. First, we want to tidy the database by
+dropping NA's and irrelevant categories such as "Poster_Link" ,
+"Certificate" and "Overview".
 
 ```{r dataset, message=FALSE, warning=FALSE}
 
@@ -83,8 +87,6 @@ clean_data <- mutate(clean_data,Meta_score = Meta_score/10,Gross_in_millions = G
 
 ```
 
-
-
 Now let's look at the clean data.
 
 ```{r}
@@ -92,7 +94,9 @@ glimpse(clean_data)
 ```
 
 Much better.
-We can see there are a total of 12 genres in the data. But some of the movies contain more than one genre:
+
+We can see there are a total of 12 genres in the data. But some of the
+movies contain more than one genre:
 
 ```{r}
 clean_data %>%
@@ -102,7 +106,8 @@ clean_data %>%
 ```
 
 In order to get a better view of the recurrence, we will extract and
-organize each of the genres separately, present in a table, and conclude which are the most popular genres.
+organize each of the genres separately, present in a table, and conclude
+which are the most popular genres.
 
 ```{r}
 
@@ -148,19 +153,31 @@ colnames(tab) <- c('Frequency')
 rownames(tab) <- c('action','adventure','animation', 'comedy', 'crime', 'drama', 'family', 'horror', 'mystery',
                    'romance', 'scifi', 'thriller')
 tab <- as.table(tab)
-
 genres_table<-as.data.frame(tab)
 genres_table = subset(genres_table, select = -c(Var2))
 genres_table <- mutate(genres_table, genre_name=Var1)
 genres_table = subset(genres_table, select = -c(Var1))
+genres_table %>% select(genre_name, Freq)%>%arrange(desc(Freq))
 
 ```
 
-# Visualization
+# Visualizations
 
 Now we can take a look at the popularity of the genres.
 
 ```{r}
+true_genres <- clean_data %>%
+ mutate(is_drama = str_detect(clean_data$Genre, "Drama", negate = FALSE),
+ is_action = str_detect(clean_data$Genre, "Action", negate = FALSE),
+ is_comedy = str_detect(clean_data$Genre, "Comedy", negate = FALSE),
+ is_adventure = str_detect(clean_data$Genre, "Adventure", negate = FALSE),
+ is_crime = str_detect(clean_data$Genre, "Crime", negate = FALSE))
+only_comedy <- true_genres%>%filter(is_comedy==TRUE)
+only_drama <- true_genres%>%filter(is_drama==TRUE)
+only_crime <- true_genres%>%filter(is_crime==TRUE)
+only_adventure <- true_genres%>%filter(is_adventure==TRUE)
+only_action <- true_genres%>%filter(is_action==TRUE)
+
 palette_Dark2 <- colorRampPalette(brewer.pal(8, "Dark2"))
 ggplot(data=genres_table, aes(x=genre_name, y=Freq, fill=genre_name)) +
   geom_bar(stat="identity") +
@@ -173,7 +190,53 @@ ggplot(data=genres_table, aes(x=genre_name, y=Freq, fill=genre_name)) +
 
 As we can see, Drama movies are much more popular than the other genres.
 
-After we examined the different movie genres, let's take a look at the distribution of our different variables:
+What about the highest-earning decade?
+
+```{r}
+clean_data <- clean_data %>%
+  mutate(Decade = if_else(Released_Year >= 2000,
+                          paste0(Released_Year  %/% 10 * 10, "'s"),
+                          paste0((Released_Year - 1900) %/% 10 * 10, "'s")))
+decade_avg<- clean_data %>%
+  group_by(Decade) %>%
+  summarize(average_in_millions = mean(Gross_in_millions, na.rm = TRUE))%>%
+  filter(!is.na(average_in_millions))
+
+decade_avg
+
+ggplot(data=decade_avg[-4,],aes(x=reorder(Decade, -average_in_millions), y=average_in_millions, fill=Decade)) +
+  geom_bar(stat = 'identity') +
+  xlab('Decade')+
+  ylab('Average Earning in millions')+
+  scale_fill_manual(values = palette_Dark2(15))
+
+```
+
+So we can see that the latest the movie the higher the revenue. It will
+be also interesting to check who are the directors with highest gross
+earned by their movie. We will narrow it to the top five directors:
+
+```{r}
+DirectorByGross <- clean_data %>% group_by(Director) %>% mutate(is.na(Gross_in_millions) <- median(Gross_in_millions)) %>% 
+                        summarise(totalGross = sum(Gross_in_millions), count= n()) %>%
+                                arrange(desc(totalGross))  %>%  head(n = 5L)%>%
+    ggplot(aes(x = reorder(Director, totalGross), y = totalGross, fill = Director)) +
+    geom_bar(stat = "identity", show.legend = FALSE) +
+    coord_flip() + 
+   geom_text(aes(label = paste0("$" ,round(totalGross)), hjust=1), size = 4) +
+   labs(x = "Directors", y = "Gross amount earned by their movies in million dollars",
+        title = "Top 5 directors by Gross of movies")+
+    theme(plot.title = element_text(size=12, hjust = 1),axis.text.y = element_text(size=10),
+         axis.ticks.x = element_blank(),axis.text.x = element_blank())
+
+DirectorByGross
+```
+
+So it actually makes sense; most of the names rings a bell.
+
+After we examined the different variables and their connection to the
+gross, it will be interesting to see the distribution of different
+variables compared to the gross:
 
 ```{r,message=FALSE, warning=FALSE}
 p1 <-ggplot(clean_data, aes(x= votes_in_thousands)) +
@@ -192,146 +255,241 @@ grid.arrange(grobs= list(p1,p2,p3,p4,p5),
 
 ```
 
-By looking at the the visualizations so far we can give two graphical assumptions:
-1. Drama is the most frequent genre.
-2. The Number of Votes, Gross, and IMDB rating distribution looks similar. 
+We know that IMDB and MetaScore are both different types of ratings.
+Let's see their distributions, compared to one another:
+
+```{r}
+Meta_IMDB_density <- ggplot(clean_data) +
+  geom_density(aes(IMDB_Rating, fill ="IMDB_Rating", alpha = 0.1)) + 
+  geom_density(aes(Meta_score, fill ="Meta_score", alpha = 0.1)) + 
+  scale_x_continuous(name = "Variables") +
+  scale_y_continuous(name = "Density") +
+  ggtitle("Density plot of Meta score vs IMDB rating") +
+  scale_fill_brewer(palette="PRGn")
+
+Meta_IMDB_density
+```
+
+We can see that the mean of both ratings looks about the same (with the
+exception of a little "hump" in the IMDB rating graph).
+
+So by looking at the visualizations, it seems like we can explore
+further three main graphical assumptions:
+
+**1.** the mean of the MetaScore and the IMDB score look similar.
+
+**2.** Drama is the most popular genre, suggesting it's also the most
+profitable one.
+
+**3.** The distributions of the Number of Votes, Gross, and IMDB rating
+look similar.
 
 Now it's time to test our assumptions.
 
+# Modeling
 
-# Modelling
+IMDB rating is the score which is given to a movie by visitors in the
+IMDB website. Metascore is the rating a movie received from expert film
+critics. We would like to examine if they align. Every IMDB rating and
+Metascore is compared to the same movie, therefore we will use paired
+t.test for the comparison.
 
-**paired t-test for IMDB & meta_score:**
+### **Paired t-test for IMDB & Meta Score**
 
-*H0:* The average IMDB rating and the average MetaScore are equal.
+**H0:** The average IMDB rating and the average MetaScore are equal.
 
-*H1:* The average IMDB rating and the average MetaScore are not equal.
+**H1:** The average IMDB rating and the average MetaScore are not equal.
 
 ```{r,message=FALSE, warning=FALSE}
 boxplot(clean_data$IMDB_Rating, clean_data$Meta_score,
-        names = c("IMDB", "METASCORE"))
+        names = c("IMDB Rating", "MetaScore"))
 
 t.test(x = clean_data$IMDB_Rating,
        y = clean_data$Meta_score,
        paired = TRUE, alternative = "two.sided")
 ```
 
-*Conclusion*
-As we can see from the results, we found that in a confidence level of 95%, we reject the null hypothesis, IMDB rating and MetaScore means are not equal.
+***Conclusion***
 
+As we can see from the results, although it was possible to believe that
+the wisdom of the crowds would align with the opinion of the experts,
+from the results we found that in a confidence level of 95%, we reject
+the null hypothesis. IMDB rating and MetaScore means are not equal.
 
-**Paired t-test for Gross income**
+### **Paired t-test for Gross of movies**
 
-*H0:* Action is a more profitable genre then non-action movies.
+As we saw earlier in the genre's graph bar, Drama is the most common
+genre by a significant margin. We know the film industry is a business
+that aims to maximize profit, so it makes sense to assume that the most
+common genre will be the most profitable.
+Having said that, we expect the top 100 drama movies gross mean to be higher than the top 100 not drama movies gross mean. 
 
-*H1:* The average gross income of action & not action movies has the
-same.
+Let's have a quick look:
 
 ```{r, message=FALSE, warning=FALSE}
-drama_v <- true_genres%>%filter(is_drama=="TRUE")
-not_drama_v <- true_genres%>%filter(is_drama=="FALSE")
+drama_v <- true_genres%>%filter(is_drama=="TRUE")%>%na.omit()%>%arrange(desc(Gross_in_millions)) %>% slice(1:100)
+top_100_v <- true_genres%>%filter(is_drama=="FALSE")%>%na.omit()%>%arrange(desc(Gross_in_millions)) %>% slice(1:100)
+drama_v_mu <- mean(drama_v$Gross_in_millions)
+top_100_v_mu <- mean(top_100_v$Gross_in_millions)
+drama_v_mu 
+top_100_v_mu
+```
 
-drama_v <- drama_v %>% arrange(desc(Gross)) %>% slice(1:150) 
-not_drama_v <- not_drama_v %>% arrange(desc(Gross)) %>% slice(1:150)
+Surprisingly, we see that the average gross income of drama movies is
+much lower than the average of rest of the movies. This leads us to believe
+that the true gross income for drama movies is lower than rest of the movies
+average gross income. We will take the 100
+top-earning drama movies and the 100 top-earning movies in general ,and
+test our new assumption. The 100 most earning movies are excluding
+drama genre movies, so we will use an unpaired t.test.
 
-boxplot(drama_v$Gross_in_millions, not_drama_v$Gross_in_millions,
-        names = c("drama gernre", "not drama genre"))
+**H0:** The average gross income of drama movies is equal to the average
+income of the rest of movies.
+
+**H1:** Drama is less profitable genre than the average the rest of the movies.
+
+```{r, message=FALSE, warning=FALSE}
+
+boxplot(drama_v$Gross_in_millions, top_100_v$Gross_in_millions,
+        names = c("100 top-earning drama movies", "100 top-earning movies"))
 
 t.test(x = drama_v$Gross_in_millions,
-       y = not_drama_v$Gross_in_millions,
+       y = top_100_v$Gross_in_millions,
        paired = FALSE, alternative = "less")
 
 ```
 
-*Conclusion*
+***Conclusion***
 
-As we can see from the results, although we thought that we found that
-in a confidence level of 95%, we accept the null hypothesis, Action
-Genre movies are more profitable than non-action genre movies.
+As we can see from the results, our assumption was confirmed by the
+paired t.test that we have conducted, and in a confidence level of 95%
+we reject the null hypothesis- the average gross income for drama genre
+movies is in fact lower than the average gross income of the rest of the genres.
 
-
-## Multiple regression model
+### **Linear regression model**
 
 We will start with correlation check in order to see which variables are
 associated to each other.
 
 ```{r, message=FALSE, warning=FALSE}
-num_data = subset(clean_data, select = -c(Series_Title, Star1, Star2, Star3, Star4, Director, Gross, Genre, No_of_Votes ))%>%na.omit() 
+num_data = subset(clean_data, select = -c(Series_Title, Star1, Star2, Star3, Star4, Director, Gross, Genre, No_of_Votes,Decade ))%>%na.omit()
 cor_graph =  cor(num_data)
 ggcorrplot(cor_graph, type = "upper", hc.order = TRUE, outline.col = "white",ggtheme = ggplot2::theme_gray,
-           colors = c("lightskyblue","white","lightseagreen"))
+           colors = c("gold","white","lightseagreen"))
+
 ```
 
-We can see a strong correlation between the number of votes & Gross
+
+We can see a strong correlation between the Number of Votes and Gross
 (which makes sense because the more people watched the movie, the more
-people ranked it). We have a strong correlation between IMDB rating & no
-of votes as well. In addition as we saw in the visualizations, the distribution of those variables reminds each other.
-Let us have a look at it:
+people ranked it). We have a strong correlation between IMDB rating and
+Number of Votes as well. In addition as we saw in the visualizations,
+the distribution of those variables reminds each other. We will examine those connections separately in a linear regression models:
 
+**Number of votes & Gross** 
 ```{r, message=FALSE, warning=FALSE}
-votes_gross <- ggplot(num_data, aes(x=votes_in_thousands, y=Gross_in_millions)) +
-  stat_smooth(col="royalblue1")
-votes_IMDB <- ggplot(num_data, aes(x=votes_in_thousands, y=IMDB_Rating)) +
-  stat_smooth(col="royalblue1")
-
-grid.arrange(grobs= list(votes_gross,votes_IMDB), fontface = 3, fontsize = 3, hjust = 1, x = 1)
-```
-
-We saw that we have a correlation between the number of votes and IMDB
-rating, and a correlation between the number of votes and Gross but with
-more variance in the higher values. Now we will check the linear model
-on the number of votes & Gross + IMDB rating:
-
-```{r, message=FALSE, warning=FALSE}
-linear_model <- lm(votes_in_thousands ~ Gross_in_millions+IMDB_Rating, data=num_data) 
+linear_model <- lm((votes_in_thousands) ~ log10(Gross_in_millions), data=num_data) 
 summary(linear_model)
 ```
 
-We can see we have around 60% of Adjusted R-squared. The adjusted
+We can see we have around 26% of Adjusted R-squared. The adjusted
 R-squared compares the explanatory power of regression models that
-contain different numbers of predictors. To make it simple, the R-squared suggests that there is a prediction of 60% to number of votes of a movie by it's IMDB rating & Gross. 
+contain different numbers of predictors. To make it simple, **26% R
+squared** indicates that the model does not imply on strong connection
+between the variables. We also know that a **p.value less than 0.05 is
+statistically significant.** It indicates strong evidence against the
+null hypothesis.
 
-Lets have a look at the multiple linear regression visualization:
+Now we will take a look at the visualization of the linear model between number of votes & Gross: 
 
 ```{r, message=FALSE, warning=FALSE}
-linear_model %>%  ggplot(aes(y=.resid, x=.fitted))+
-  geom_point(color="turquoise4")+
-  stat_smooth(method = "lm",color="black")
+votes_gross <- ggplot(num_data, aes(x=Gross_in_millions, y=votes_in_thousands))+scale_x_log10() +geom_point() +
+  geom_smooth(col="royalblue1", method = "lm")
+
+votes_gross
 ```
 
-The graph does not look homoscedastic. Why is that?
+We can see that there is a pattern of the higher the number of votes the higher the gross is, but it is not significant (the 26% R squared fits pretty well here). Moreover we see that we do not have homoscedasticity here.  
 
-Let's try to understand. First, we need to have a look at whether our
-residuals normally distributed:
+Now we will take a look at the residuals plot to examine whether they are normally distributed: 
 
 ```{r, message=FALSE, warning=FALSE}
-
 residuals_qq<- linear_model %>% ggplot(aes(sample=.resid)) +
   geom_qq() + geom_qq_line(col="blue") +
-  labs(title="Residuals QQ Plot")
+  labs(title="Residuals qq Plot")
 residuals_qq
-
 ```
 
-We can see from the QQ plot that our residuals do not distribute
-normally.
+We can see from the qq plot that our residuals **do not distribute
+normally**.
 
-Now let's make Breusch-Pagan Test for homoscedasticity of the data:
 
-```{r, message=FALSE, warning=FALSE }
-bptest(linear_model)
-```
+***Conclusions***
 
-Result of p < 0.05 suggesting that our data is not homoscedastic.
-
-*Conclusions*
-
-In order to use our model for predicting model, a number of conditions
-must exist: **homoscedasticity** of the data & **normally distributed**
+In order to use our model for predicting model, two of conditions must
+exist: **homoscedasticity** of the data and **normally distributed**
 residuals. Our data does not answer this conditions, so our model can
 not be used as a predicting model.
 
-# Sumarry
+**Number of votes & IMDB Rating** 
+```{r, message=FALSE, warning=FALSE}
+linear_model2 <- lm((votes_in_thousands) ~ (IMDB_Rating), data=num_data) 
+summary(linear_model2)
+```
 
 
-![](the_end.jpg){width=50%}
+We can see we have around 37% of Adjusted R-squared. **37% R
+squared** indicates that the model does not imply on strong connection
+between the variables. We also know that a **p.value less than 0.05 is
+statistically significant.** It indicates strong evidence against the
+null hypothesis.
+
+Now we will take a look at the visualization of the linear model between number of votes & IMDB Rating: 
+
+```{r, message=FALSE, warning=FALSE}
+votes_imdb <- ggplot(num_data, aes(x=IMDB_Rating, y=votes_in_thousands))+geom_point() +
+  geom_smooth(col="royalblue1", method = "lm")
+
+votes_imdb
+```
+
+We can learn from the visualization that from the lowest IMDB ratings to around 8.1 we almost do not have a difference in the number of votes, but as we go higher, specially higher than around 8.6 most of the movies receive a significantly high number of votes. But in this model as well, we can see that we do not have homoscedasticity. 
+
+Now we will take a look at the residuals plot to examine whether they are normally distributed: 
+
+```{r, message=FALSE, warning=FALSE}
+residuals_qq<- linear_model2 %>% ggplot(aes(sample=.resid)) +
+  geom_qq() + geom_qq_line(col="blue") +
+  labs(title="Residuals qq Plot")
+residuals_qq
+```
+
+We can see from the qq plot that our residuals **do not distribute
+normally**.
+
+
+***Conclusions***
+
+In this model as well, we could not meet the requirements of **homoscedasticity** and **normally distributed residuals**, so we can not except the model,
+but we have got some more insights about the data. 
+
+
+
+# Discussion and Summary
+
+In our report, we explored the many ways the gross is affected.
+
+We learned who directs the highest-earning movies and also what are the
+top-earning decades.
+
+We found that the average rating of the MetaScore and IMDB is not the
+same, and also learned that the profits of Drama films are quite low
+compared to other films, even though it is the most popular genre.
+Finally, in both of the Linear Regression Tests we received a low
+p.value, which is statistically significant, indicating strong evidence
+against the null hypothesis. The model assumptions aren't met, so we can
+confirm that the model's outcome cannot be fully trusted.
+
+Thank you for reading!
+
+![](the_end.jpg){width="50%"}
